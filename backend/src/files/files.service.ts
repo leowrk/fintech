@@ -21,8 +21,8 @@ export class FilesService {
       description?: string;
     } = {},
   ): Promise<File> {
-    const baseUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 3001}`;
-    const url = `${baseUrl}/uploads/${multerFile.filename}`;
+    // Guardamos solo el path relativo — el frontend construye la URL completa
+    const url = `/uploads/${multerFile.filename}`;
 
     const file = this.fileRepository.create({
       originalName: multerFile.originalname,

@@ -243,7 +243,7 @@ const AdminApplications = () => {
   };
 
   const getFileUrl = (file) => {
-    if (file.url) return file.url;
+    // Siempre construimos la URL con el backend actual (ignoramos file.url que puede tener localhost)
     return `${API_URL}/uploads/${file.filename}`;
   };
 
