@@ -18,16 +18,16 @@ export class User {
   @Column({ select: false })
   password: string;
 
-  @Column()
+  @Column({ default: '' })
   firstName: string;
 
-  @Column()
+  @Column({ default: '' })
   lastName: string;
 
   @Column({ default: false })
   isAdmin: boolean;
 
-  @Column({ nullable: true, length: 20 })
+  @Column({ nullable: true, length: 20, unique: true })
   documentNumber: string;
 
   @Column({ nullable: true, length: 20 })

@@ -1,0 +1,25 @@
+# Credenciales — NUNCA subir
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Dependencias
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+backend/dist/
+frontend/dist/
+
+# Archivos subidos por usuarios
+backend/uploads/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/settings.json
+
+# Claude
+.claude/

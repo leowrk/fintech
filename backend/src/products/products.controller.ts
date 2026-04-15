@@ -31,21 +31,21 @@ export class ProductsController {
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
-  findAll(
+  async findAll(
     @Query('category') category?: string,
     @Query('search') search?: string,
     @Query('featured') featured?: string,
     @Query('page') page?: number,
     @Query('limit') limit?: number,
   ) {
-    return this.productsService.findAll({
+    const result = await this.productsService.findAll({
       category,
       search,
       featured: featured === 'true' ? true : featured === 'false' ? false : undefined,
-      available: true,
-      page,
-      limit,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
     });
+    return result;
   }
 
   @Get('categories')

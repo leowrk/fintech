@@ -1,6 +1,10 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 function Home() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F4FBF9] to-[#E2F6F3] font-sans text-slate-900 selection:bg-cyan-100 selection:text-cyan-900">
       {/* --- NAVBAR --- */}
@@ -42,19 +46,44 @@ function Home() {
         </div>
 
         {/* Botones Derecha */}
-        <div className="flex items-center gap-4">
-          <Link
-            to="/login"
-            className="text-sm font-bold text-[#023047] hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors border border-gray-200"
-          >
-            Login
-          </Link>
-          <Link
-            to="/signup"
-            className="bg-[#2A9D8F] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-[#21867a] transition-all shadow-lg shadow-teal-900/10"
-          >
-            Sign Up
-          </Link>
+        <div className="flex items-center gap-3">
+          {user ? (
+            <>
+              <Link
+                to="/mi-postulacion"
+                className="text-sm font-bold text-[#2A9D8F] hover:underline"
+              >
+                Mi Postulación
+              </Link>
+              <Link
+                to="/catalog"
+                className="text-sm font-medium text-gray-500 hover:text-[#023047] px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Ver catálogo
+              </Link>
+              <button
+                onClick={() => { logout(); navigate('/'); }}
+                className="text-sm text-gray-400 hover:text-red-500 transition-colors"
+              >
+                Salir
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className="text-sm font-bold text-[#023047] hover:bg-gray-50 px-5 py-2.5 rounded-lg transition-colors border border-gray-200"
+              >
+                Login
+              </Link>
+              <Link
+                to="/signup"
+                className="bg-[#2A9D8F] text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-[#21867a] transition-all shadow-lg shadow-teal-900/10"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
         </div>
       </nav>
 

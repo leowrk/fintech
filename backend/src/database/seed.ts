@@ -4,23 +4,35 @@
  */
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { User } from '../auth/entities/user.entity';
 import { Product } from '../products/entities/product.entity';
+import { SystemSettings } from '../auth/entities/system-settings.entity';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  username: process.env.DB_USERNAME || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_DATABASE || 'fintech_db',
-  synchronize: true,
-  entities: [User, Product],
-});
+// Soporta DATABASE_URL (Railway) o variables individuales (local/Docker)
+const databaseUrl = process.env.DATABASE_URL;
+
+const AppDataSource = databaseUrl
+  ? new DataSource({
+      type: 'postgres',
+      url: databaseUrl,
+      synchronize: true,
+      entities: [User, Product, SystemSettings],
+      ssl: { rejectUnauthorized: false },
+    })
+  : new DataSource({
+      type: 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      username: process.env.DB_USERNAME || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
+      database: process.env.DB_DATABASE || 'fintech_db',
+      synchronize: true,
+      entities: [User, Product, SystemSettings],
+    });
 
 async function seed() {
   await AppDataSource.initialize();

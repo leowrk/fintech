@@ -19,12 +19,13 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class ApplicationsController {
   constructor(private readonly applicationsService: ApplicationsService) {}
 
-  // Crear solicitud (pública — cualquiera puede aplicar)
+  // Crear solicitud — requiere autenticación
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Crear solicitud de financiamiento' })
   create(@Body() dto: CreateApplicationDto, @Request() req: any) {
-    const userId = req.user?.id;
-    return this.applicationsService.create(dto, userId);
+    return this.applicationsService.create(dto, req.user.id);
   }
 
   // Ver mis solicitudes (requiere auth)
@@ -33,7 +34,12 @@ export class ApplicationsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Mis solicitudes' })
   myApplications(@Request() req: any) {
-    return this.applicationsService.findByUser(req.user.id);
+    // Pasar userId + email + documentNumber para recuperar también solicitudes antiguas
+    return this.applicationsService.findByUser(
+      req.user.id,
+      req.user.email,
+      req.user.documentNumber,
+    );
   }
 
   // Calcular cuota simulada

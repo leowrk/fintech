@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login } = useAdminAuth();
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
@@ -18,14 +18,10 @@ const AdminLogin = () => {
     setError('');
     setLoading(true);
     try {
-      const user = await login(form.email, form.password);
-      if (!user.isAdmin) {
-        setError('Solo administradores pueden acceder al panel.');
-        return;
-      }
+      await login(form.email, form.password);
       navigate(from, { replace: true });
     } catch (err) {
-      const msg = err.response?.data?.message || 'Credenciales inválidas';
+      const msg = err.message || err.response?.data?.message || 'Credenciales inválidas';
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setLoading(false);

@@ -32,15 +32,61 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const _saveSession = (access_token, userData) => {
+    localStorage.setItem('token', access_token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    setUser(userData);
+    return userData;
+  };
+
+  // Login con email + contraseña
+  const login = useCallback(async (email, password, registerData = null) => {
     setLoading(true);
     try {
-      const res = await authAPI.login(email, password);
+      let res;
+      if (registerData?.register) {
+        res = await authAPI.register({
+          email,
+          password,
+          firstName: registerData.firstName || '',
+          lastName: registerData.lastName || '',
+          documentNumber: registerData.documentNumber || undefined,
+        });
+      } else {
+        res = await authAPI.login(email, password);
+      }
       const { access_token, user: userData } = res.data;
-      localStorage.setItem('token', access_token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-      return userData;
+      return _saveSession(access_token, userData);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Login con DNI + contraseña (para el formulario de postulación)
+  const loginByDni = useCallback(async (documentNumber, password) => {
+    setLoading(true);
+    try {
+      const res = await authAPI.loginDni(documentNumber, password);
+      const { access_token, user: userData } = res.data;
+      return _saveSession(access_token, userData);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Registro con DNI (para nuevos usuarios desde el formulario)
+  const registerByDni = useCallback(async ({ documentNumber, password, email, firstName, lastName }) => {
+    setLoading(true);
+    try {
+      const res = await authAPI.register({
+        documentNumber,
+        password,
+        email,
+        firstName: firstName || '',
+        lastName: lastName || '',
+      });
+      const { access_token, user: userData } = res.data;
+      return _saveSession(access_token, userData);
     } finally {
       setLoading(false);
     }
@@ -55,7 +101,16 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.isAdmin === true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, initializing, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      initializing,
+      login,
+      loginByDni,
+      registerByDni,
+      logout,
+      isAdmin,
+    }}>
       {children}
     </AuthContext.Provider>
   );

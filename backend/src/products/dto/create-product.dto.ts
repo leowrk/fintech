@@ -5,7 +5,9 @@ import {
   IsOptional,
   IsBoolean,
   IsObject,
+  IsArray,
   Min,
+  Max,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -62,4 +64,23 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   stock?: number;
+
+  @ApiProperty({ example: 0.019, description: 'Tasa de interés mensual (0.019 = 1.9%)', required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  interestRate?: number;
+
+  @ApiProperty({ example: [6, 12, 18, 24], description: 'Plazos disponibles en meses', required: false })
+  @IsOptional()
+  @IsArray()
+  paymentTerms?: number[];
+
+  @ApiProperty({ example: 10, description: 'Cuota inicial mínima en porcentaje', required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  minDownPayment?: number;
 }

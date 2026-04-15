@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 
 const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout } = useAdminAuth();
 
   const isActive = (path) =>
     location.pathname.includes(path)
@@ -50,6 +50,15 @@ const AdminLayout = () => {
             className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive('products')}`}
           >
             <span>📦</span> Productos
+          </Link>
+
+          <div className="border-t border-slate-800 my-2" />
+
+          <Link
+            to="/admin/settings"
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive('settings')}`}
+          >
+            <span>⚙️</span> Configuración
           </Link>
         </nav>
 

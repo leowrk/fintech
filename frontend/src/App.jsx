@@ -1,7 +1,8 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
-import PrivateRoute from "./components/PrivateRoute";
+import { AdminAuthProvider } from "./contexts/AdminAuthContext";
+import AdminPrivateRoute from "./components/AdminPrivateRoute";
 
 // Páginas Públicas
 import Home from "./pages/Home";
@@ -14,6 +15,7 @@ import Rates from "./pages/Rates";
 import Help from "./pages/Help";
 import FinancingForm from "./pages/FinancingForm";
 import ApplicationSummary from "./pages/ApplicationSummary";
+import MiPostulacion from "./pages/MiPostulacion";
 
 // Páginas Admin
 import AdminLogin from "./pages/admin/AdminLogin";
@@ -23,10 +25,12 @@ import AdminProducts from "./pages/admin/AdminProducts";
 import AdminProductForm from "./pages/admin/AdminProductForm";
 import AdminProductEdit from "./pages/admin/AdminProductEdit";
 import AdminApplications from "./pages/admin/AdminApplications";
+import AdminSettings from "./pages/admin/AdminSettings";
 
 function App() {
   return (
     <AuthProvider>
+      <AdminAuthProvider>
       <BrowserRouter>
         <Routes>
           {/* ── RUTAS PÚBLICAS ── */}
@@ -40,6 +44,7 @@ function App() {
           <Route path="/ayuda" element={<Help />} />
           <Route path="/formulario-financiamiento" element={<FinancingForm />} />
           <Route path="/resumen" element={<ApplicationSummary />} />
+          <Route path="/mi-postulacion" element={<MiPostulacion />} />
 
           {/* ── ADMIN LOGIN (pública) ── */}
           <Route path="/admin/login" element={<AdminLogin />} />
@@ -48,9 +53,9 @@ function App() {
           <Route
             path="/admin"
             element={
-              <PrivateRoute>
+              <AdminPrivateRoute>
                 <AdminLayout />
-              </PrivateRoute>
+              </AdminPrivateRoute>
             }
           >
             {/* Redirige /admin → /admin/dashboard */}
@@ -60,12 +65,14 @@ function App() {
             <Route path="products" element={<AdminProducts />} />
             <Route path="products/new" element={<AdminProductForm />} />
             <Route path="products/:id/edit" element={<AdminProductEdit />} />
+            <Route path="settings" element={<AdminSettings />} />
           </Route>
 
           {/* ── 404 → Home ── */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      </AdminAuthProvider>
     </AuthProvider>
   );
 }

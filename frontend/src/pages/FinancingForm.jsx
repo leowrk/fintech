@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { applicationsAPI } from '../services/api';
+import { applicationsAPI, uploadAPI, authAPI } from '../services/api';
+import { getDepartamentos, getProvincias, getDistritos } from '../data/peruUbigeo';
+import { useAuth } from '../contexts/AuthContext';
 
 const FinancingForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, loginByDni, registerByDni } = useAuth();
   
   // Producto seleccionado desde el catálogo
   const selectedProduct = location.state?.product;
@@ -73,6 +76,17 @@ const FinancingForm = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // ── Auth Gate (login/registro por DNI) ────────────────────────────────────
+  const [showAuthGate, setShowAuthGate] = useState(false);
+  const [authGateMode, setAuthGateMode] = useState('checking'); // 'checking' | 'login' | 'register'
+  const [authGateLoading, setAuthGateLoading] = useState(false);
+  const [authGateError, setAuthGateError] = useState('');
+  const [gatePassword, setGatePassword] = useState('');
+  const [gatePasswordConfirm, setGatePasswordConfirm] = useState('');
+  const [gateShowPassword, setGateShowPassword] = useState(false);
+  const [existingUserName, setExistingUserName] = useState('');
+  const pendingActionRef = useRef(null); // 'next' | 'submit'
+
   // Opciones para selects
   const documentTypes = [
     { value: 'DNI', label: 'DNI' },
@@ -119,14 +133,10 @@ const FinancingForm = () => {
     { value: '10', label: 'X Ciclo' }
   ];
 
-  const departments = [
-    { value: 'lima', label: 'Lima' },
-    { value: 'arequipa', label: 'Arequipa' },
-    { value: 'cusco', label: 'Cusco' },
-    { value: 'la-libertad', label: 'La Libertad' },
-    { value: 'piura', label: 'Piura' },
-    { value: 'lambayeque', label: 'Lambayeque' }
-  ];
+  // Ubigeo en cascada
+  const departamentos = useMemo(() => getDepartamentos(), []);
+  const provincias = useMemo(() => getProvincias(formData.department), [formData.department]);
+  const distritos = useMemo(() => getDistritos(formData.department, formData.province), [formData.department, formData.province]);
 
   const housingTypes = [
     { value: 'own', label: 'Propio' },
@@ -181,25 +191,21 @@ const FinancingForm = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked, files } = e.target;
-    
+
     if (type === 'checkbox') {
-      setFormData(prev => ({
-        ...prev,
-        [name]: checked
-      }));
+      setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (files) {
-      setFormData(prev => ({
-        ...prev,
-        [name]: files[0]
-      }));
+      setFormData(prev => ({ ...prev, [name]: files[0] }));
+    } else if (name === 'department') {
+      // Al cambiar departamento, limpiar provincia y distrito
+      setFormData(prev => ({ ...prev, department: value, province: '', district: '' }));
+    } else if (name === 'province') {
+      // Al cambiar provincia, limpiar distrito
+      setFormData(prev => ({ ...prev, province: value, district: '' }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [name]: value
-      }));
+      setFormData(prev => ({ ...prev, [name]: value }));
     }
-    
-    // Limpiar error del campo
+
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -223,8 +229,6 @@ const FinancingForm = () => {
         }
         if (!formData.acceptsTerms) newErrors.acceptsTerms = 'Debes aceptar los términos y condiciones';
         if (!formData.acceptsAdvertisingPolicy) newErrors.acceptsAdvertisingPolicy = 'Debes aceptar las políticas de publicidad';
-        if (!formData.dniVerified) newErrors.dniVerified = 'Debes verificar tu DNI';
-        if (!formData.emailVerified) newErrors.emailVerified = 'Debes verificar tu correo electrónico';
         break;
 
       case 2: // Información académica
@@ -275,12 +279,103 @@ const FinancingForm = () => {
 
   const handleNext = () => {
     if (validateCurrentStep()) {
+      // Requerir autenticación al terminar Step 1
+      if (currentStep === 1 && !user) {
+        openAuthGate('next');
+        return;
+      }
       setCurrentStep(prev => Math.min(prev + 1, 5));
     }
   };
 
   const handlePrevious = () => {
     setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
+
+  // ── Lógica del Auth Gate ──────────────────────────────────────────────────
+  const openAuthGate = async (pendingAction) => {
+    pendingActionRef.current = pendingAction;
+    setAuthGateMode('checking');
+    setAuthGateError('');
+    setGatePassword('');
+    setGatePasswordConfirm('');
+    setShowAuthGate(true);
+
+    try {
+      const res = await authAPI.checkDni(formData.documentNumber);
+      if (res.data.exists) {
+        setExistingUserName(res.data.firstName || '');
+        setAuthGateMode('login');
+      } else {
+        setAuthGateMode('register');
+      }
+    } catch {
+      setAuthGateMode('register');
+    }
+  };
+
+  const handleAuthGateLogin = async () => {
+    if (!gatePassword) {
+      setAuthGateError('Ingresa tu contraseña');
+      return;
+    }
+    setAuthGateLoading(true);
+    setAuthGateError('');
+    try {
+      await loginByDni(formData.documentNumber, gatePassword);
+      setShowAuthGate(false);
+      executePendingAction();
+    } catch (err) {
+      setAuthGateError(err.response?.data?.message || 'Contraseña incorrecta');
+    } finally {
+      setAuthGateLoading(false);
+    }
+  };
+
+  const handleAuthGateRegister = async () => {
+    if (!gatePassword) {
+      setAuthGateError('Ingresa una contraseña');
+      return;
+    }
+    if (gatePassword.length < 6) {
+      setAuthGateError('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (gatePassword !== gatePasswordConfirm) {
+      setAuthGateError('Las contraseñas no coinciden');
+      return;
+    }
+    if (!formData.email) {
+      setAuthGateError('Por favor ingresa tu correo electrónico en el formulario primero');
+      return;
+    }
+    setAuthGateLoading(true);
+    setAuthGateError('');
+    try {
+      await registerByDni({
+        documentNumber: formData.documentNumber,
+        password: gatePassword,
+        email: formData.email,
+      });
+      setShowAuthGate(false);
+      executePendingAction();
+    } catch (err) {
+      const msg = err.response?.data?.message;
+      setAuthGateError(Array.isArray(msg) ? msg.join(', ') : (msg || 'Error al crear la cuenta'));
+    } finally {
+      setAuthGateLoading(false);
+    }
+  };
+
+  const executePendingAction = () => {
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (action === 'next') {
+      setCurrentStep((prev) => Math.min(prev + 1, 5));
+    } else if (action === 'submit') {
+      // Llamar submit directamente (sin re-chequear autenticación)
+      submitApplication();
+    }
   };
 
   const handleVerifyEmail = async () => {
@@ -318,9 +413,8 @@ const FinancingForm = () => {
     }, 2000);
   };
 
-  const goToSummary = async () => {
-    if (!validateCurrentStep()) return;
-
+  // Lógica real de envío (sin chequeo de auth, ya fue validado)
+  const submitApplication = async () => {
     setLoading(true);
     try {
       const payload = {
@@ -362,13 +456,44 @@ const FinancingForm = () => {
       };
 
       const res = await applicationsAPI.create(payload);
-      navigate('/resumen', { state: { formData, product: selectedProduct, applicationId: res.data.id } });
+      const applicationId = res.data.id;
+
+      // Upload attached files
+      const fileUploads = [
+        { file: formData.dniPhoto, fileType: 'dni' },
+        { file: formData.enrollmentFile, fileType: 'enrollment' },
+        { file: formData.paymentProof && typeof formData.paymentProof !== 'string' ? formData.paymentProof : null, fileType: 'payment_proof' },
+      ];
+
+      await Promise.allSettled(
+        fileUploads
+          .filter(({ file }) => file instanceof File)
+          .map(({ file, fileType }) => {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('fileType', fileType);
+            fd.append('applicationId', applicationId);
+            return uploadAPI.upload(fd);
+          })
+      );
+
+      navigate('/resumen', { state: { formData, product: selectedProduct, applicationId } });
     } catch (err) {
       const msg = err.response?.data?.message;
       alert(Array.isArray(msg) ? msg.join('\n') : (msg || 'Error al enviar la solicitud. Intenta de nuevo.'));
     } finally {
       setLoading(false);
     }
+  };
+
+  // Gate de autenticación antes de enviar
+  const goToSummary = async () => {
+    if (!validateCurrentStep()) return;
+    if (!user) {
+      openAuthGate('submit');
+      return;
+    }
+    await submitApplication();
   };
 
   if (!selectedProduct) {
@@ -408,6 +533,14 @@ const FinancingForm = () => {
             </div>
             <span className="text-xl font-bold text-gray-900">Fintech</span>
           </div>
+          {user && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-100 rounded-full px-3 py-1">
+              <span className="w-2 h-2 bg-green-500 rounded-full" />
+              <span className="text-xs text-green-700 font-medium hidden sm:block">
+                DNI {user.documentNumber || 'conectado'}
+              </span>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -542,33 +675,38 @@ const FinancingForm = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Correo Electrónico *
                   </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        errors.email ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                      placeholder="ejemplo@correo.com"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleVerifyEmail}
-                      disabled={loading || !formData.email}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {formData.emailVerified ? 'Verificado ✓' : 'Verificar'}
-                    </button>
-                  </div>
+                  <input
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      errors.email ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                    placeholder="ejemplo@correo.com"
+                  />
                   {errors.email && (
                     <p className="text-red-500 text-xs mt-1">{errors.email}</p>
                   )}
-                  {errors.emailVerified && (
-                    <p className="text-red-500 text-xs mt-1">{errors.emailVerified}</p>
-                  )}
                 </div>
+              </div>
+
+              {/* DNI File Upload */}
+              <div className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Foto / Escáner del DNI
+                </label>
+                <p className="text-xs text-gray-400 mb-3">Adjunta una foto clara de tu documento de identidad (anverso). Formatos: JPG, PNG, PDF (máx. 5 MB)</p>
+                <input
+                  type="file"
+                  name="dniPhoto"
+                  onChange={handleInputChange}
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  className="w-full text-sm text-gray-600 file:mr-3 file:py-1.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                />
+                {formData.dniPhoto && (
+                  <p className="text-xs text-green-600 mt-1.5">✅ Archivo seleccionado: {formData.dniPhoto.name}</p>
+                )}
               </div>
 
               <div>
@@ -591,64 +729,57 @@ const FinancingForm = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Departamento */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Departamento *
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Departamento *</label>
                   <select
                     name="department"
                     value={formData.department}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      errors.department ? 'border-red-500' : 'border-gray-300'
-                    }`}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${errors.department ? 'border-red-500' : 'border-gray-300'}`}
                   >
-                    <option value="">Selecciona</option>
-                    {departments.map(dept => (
-                      <option key={dept.value} value={dept.value}>{dept.label}</option>
+                    <option value="">Selecciona departamento</option>
+                    {departamentos.map(d => (
+                      <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
-                  {errors.department && (
-                    <p className="text-red-500 text-xs mt-1">{errors.department}</p>
-                  )}
+                  {errors.department && <p className="text-red-500 text-xs mt-1">{errors.department}</p>}
                 </div>
 
+                {/* Provincia — depende del departamento */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Provincia *
-                  </label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Provincia *</label>
+                  <select
                     name="province"
                     value={formData.province}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      errors.province ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Nombre de la provincia"
-                  />
-                  {errors.province && (
-                    <p className="text-red-500 text-xs mt-1">{errors.province}</p>
-                  )}
+                    disabled={!formData.department}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 ${errors.province ? 'border-red-500' : 'border-gray-300'}`}
+                  >
+                    <option value="">Selecciona provincia</option>
+                    {provincias.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                  {errors.province && <p className="text-red-500 text-xs mt-1">{errors.province}</p>}
                 </div>
 
+                {/* Distrito — depende de la provincia */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Distrito *
-                  </label>
-                  <input
-                    type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Distrito *</label>
+                  <select
                     name="district"
                     value={formData.district}
                     onChange={handleInputChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      errors.district ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                    placeholder="Nombre del distrito"
-                  />
-                  {errors.district && (
-                    <p className="text-red-500 text-xs mt-1">{errors.district}</p>
-                  )}
+                    disabled={!formData.province}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 ${errors.district ? 'border-red-500' : 'border-gray-300'}`}
+                  >
+                    <option value="">Selecciona distrito</option>
+                    {distritos.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                  {errors.district && <p className="text-red-500 text-xs mt-1">{errors.district}</p>}
                 </div>
               </div>
 
@@ -698,42 +829,6 @@ const FinancingForm = () => {
                     )}
                   </div>
                 )}
-              </div>
-
-              {/* Evidencia de Datos */}
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Evidencia de Datos</h3>
-                
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Verificar DNI *
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="file"
-                      name="dniPhoto"
-                      onChange={handleInputChange}
-                      accept="image/*"
-                      className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        errors.dniPhoto ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleVerifyDNI}
-                      disabled={loading || !formData.dniPhoto}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {formData.dniVerified ? 'Verificado ✓' : 'Verificar'}
-                    </button>
-                  </div>
-                  {errors.dniPhoto && (
-                    <p className="text-red-500 text-xs mt-1">{errors.dniPhoto}</p>
-                  )}
-                  {errors.dniVerified && (
-                    <p className="text-red-500 text-xs mt-1">{errors.dniVerified}</p>
-                  )}
-                </div>
               </div>
 
               {/* Términos y Condiciones */}
@@ -1301,6 +1396,175 @@ const FinancingForm = () => {
           </div>
         </div>
       </div>
+
+      {/* ── AUTH GATE MODAL ── */}
+      {showAuthGate && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden">
+
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#023047] to-[#034060] p-6 text-white">
+              <div className="flex items-center gap-3 mb-1">
+                <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-bold text-base">Confirma tu identidad</p>
+                  <p className="text-blue-200 text-xs">Para continuar con tu solicitud</p>
+                </div>
+              </div>
+              <div className="mt-3 bg-white/10 rounded-lg px-3 py-2 flex items-center gap-2">
+                <span className="text-xs text-blue-200">DNI:</span>
+                <span className="font-bold tracking-widest">{formData.documentNumber}</span>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6">
+              {authGateMode === 'checking' && (
+                <div className="py-6 text-center">
+                  <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">Verificando tu DNI...</p>
+                </div>
+              )}
+
+              {authGateMode === 'login' && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 mb-0.5">
+                      {existingUserName ? `¡Hola, ${existingUserName}! 👋` : '¡Bienvenido de vuelta!'}
+                    </p>
+                    <p className="text-xs text-gray-400">Ya tienes una cuenta. Ingresa tu contraseña para continuar.</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña</label>
+                    <div className="relative">
+                      <input
+                        type={gateShowPassword ? 'text' : 'password'}
+                        value={gatePassword}
+                        onChange={(e) => { setGatePassword(e.target.value); setAuthGateError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAuthGateLogin()}
+                        autoFocus
+                        placeholder="Tu contraseña"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm pr-10 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setGateShowPassword(v => !v)}
+                        className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                      >
+                        {gateShowPassword ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {authGateError && (
+                    <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{authGateError}</p>
+                  )}
+
+                  <button
+                    onClick={handleAuthGateLogin}
+                    disabled={authGateLoading}
+                    className="w-full bg-[#023047] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-[#034060] disabled:opacity-60 transition-colors"
+                  >
+                    {authGateLoading ? 'Ingresando...' : 'Ingresar y continuar →'}
+                  </button>
+                </div>
+              )}
+
+              {authGateMode === 'register' && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 mb-0.5">Crea tu contraseña 🔐</p>
+                    <p className="text-xs text-gray-400">
+                      Es la primera vez que usas este DNI. Crea una contraseña para tu cuenta.
+                    </p>
+                  </div>
+
+                  {/* Email display */}
+                  <div className="bg-gray-50 rounded-lg px-3 py-2">
+                    <p className="text-xs text-gray-400">Correo de la cuenta</p>
+                    <p className="text-sm font-medium text-gray-700 truncate">
+                      {formData.email || <span className="text-orange-500">⚠ Ingresa tu correo en el formulario</span>}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Contraseña <span className="text-gray-400">(mín. 6 caracteres)</span></label>
+                    <div className="relative">
+                      <input
+                        type={gateShowPassword ? 'text' : 'password'}
+                        value={gatePassword}
+                        onChange={(e) => { setGatePassword(e.target.value); setAuthGateError(''); }}
+                        autoFocus
+                        placeholder="Crea una contraseña"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm pr-10 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setGateShowPassword(v => !v)}
+                        className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Confirmar contraseña</label>
+                    <input
+                      type={gateShowPassword ? 'text' : 'password'}
+                      value={gatePasswordConfirm}
+                      onChange={(e) => { setGatePasswordConfirm(e.target.value); setAuthGateError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAuthGateRegister()}
+                      placeholder="Repite la contraseña"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-100"
+                    />
+                  </div>
+
+                  {authGateError && (
+                    <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{authGateError}</p>
+                  )}
+
+                  <button
+                    onClick={handleAuthGateRegister}
+                    disabled={authGateLoading}
+                    className="w-full bg-[#2A9D8F] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-[#21867a] disabled:opacity-60 transition-colors"
+                  >
+                    {authGateLoading ? 'Creando cuenta...' : 'Crear cuenta y continuar →'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 pb-5">
+              <button
+                onClick={() => setShowAuthGate(false)}
+                className="w-full text-xs text-gray-400 hover:text-gray-600 py-1"
+              >
+                Cancelar y volver al formulario
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

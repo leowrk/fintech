@@ -109,12 +109,41 @@ export class ApplicationsService {
     return app;
   }
 
-  async findByUser(userId: string): Promise<Application[]> {
-    return this.applicationRepository.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-      relations: ['files'],
-    });
+  async findByUser(
+    userId: string,
+    email?: string,
+    documentNumber?: string,
+  ): Promise<Application[]> {
+    const qb = this.applicationRepository
+      .createQueryBuilder('app')
+      .leftJoinAndSelect('app.files', 'files')
+      .where('app.userId = :userId', { userId });
+
+    // Recuperar también solicitudes antiguas sin userId pero con mismo email o DNI
+    if (email) {
+      qb.orWhere('(app.userId IS NULL AND app.email = :email)', { email });
+    }
+    if (documentNumber) {
+      qb.orWhere(
+        '(app.userId IS NULL AND app.documentNumber = :documentNumber)',
+        { documentNumber },
+      );
+    }
+
+    const apps = await qb.orderBy('app.createdAt', 'DESC').getMany();
+
+    // Vincular retroactivamente las que encontramos sin userId
+    const toFix = apps.filter((a) => !a.userId);
+    if (toFix.length > 0) {
+      await this.applicationRepository
+        .createQueryBuilder()
+        .update(Application)
+        .set({ userId })
+        .whereInIds(toFix.map((a) => a.id))
+        .execute();
+    }
+
+    return apps;
   }
 
   async updateStatus(

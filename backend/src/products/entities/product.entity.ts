@@ -44,6 +44,20 @@ export class Product {
   @Column({ type: 'int', default: 0 })
   stock: number;
 
+  // ── Campos financieros ───────────────────────────────────────────────────────
+
+  /** Tasa de interés mensual (ej: 0.019 = 1.9%) */
+  @Column({ type: 'decimal', precision: 6, scale: 4, default: 0.019 })
+  interestRate: number;
+
+  /** Plazos disponibles en meses (ej: [6, 12, 18, 24]) */
+  @Column({ type: 'jsonb', default: [6, 12, 18, 24] })
+  paymentTerms: number[];
+
+  /** Cuota inicial mínima en porcentaje (ej: 10 = 10%) */
+  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0 })
+  minDownPayment: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import PaymentScheduleModal from '../components/PaymentScheduleModal';
 import ProductDetailsModal from '../components/ProductDetailsModal';
 import { productsAPI } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 const Catalog = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [selectedCategory, setSelectedCategory] = useState('Todos');
   const [priceRange, setPriceRange] = useState(5000);
@@ -14,19 +16,28 @@ const Catalog = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [allProducts, setAllProducts] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [apiError, setApiError] = useState('');
 
   // Cargar productos desde la API
   useEffect(() => {
+    setLoadingProducts(true);
     productsAPI
       .getAll({ limit: 50 })
       .then((res) => {
-        const items = res.data.items || [];
-        // Normalizar para que funcionen los modales existentes
+        const items = res.data?.items || [];
+        const rate = (p) => parseFloat(p.interestRate) || 0.019;
+        const monthly = (p, term = 12) => {
+          const r = rate(p);
+          const price = parseFloat(p.price) || 0;
+          return Math.round((price * r) / (1 - Math.pow(1 + r, -term)));
+        };
         setAllProducts(
           items.map((p) => ({
             ...p,
             image: p.imageUrl || 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&q=80',
-            monthly: Math.round((p.price * 0.019) / (1 - Math.pow(1.019, -12))),
+            monthly: monthly(p),
+            interestRateNum: rate(p),
+            paymentTerms: p.paymentTerms || [6, 12, 18, 24],
             processor: p.specs?.processor,
             ram: p.specs?.ram,
             storage: p.specs?.storage,
@@ -35,7 +46,12 @@ const Catalog = () => {
           }))
         );
       })
-      .catch(() => setAllProducts([]))
+      .catch((err) => {
+        console.error('Error cargando productos:', err);
+        const msg = err.response?.data?.message || err.message || 'Error de conexión con el servidor';
+        setApiError(msg);
+        setAllProducts([]);
+      })
       .finally(() => setLoadingProducts(false));
   }, []);
 
@@ -74,9 +90,15 @@ const Catalog = () => {
             <div className="w-6 h-6 bg-[#023047] rounded-tr-lg rounded-bl-lg"></div>
             <span className="text-xl font-bold tracking-tight text-[#023047]">Fintech</span>
           </Link>
-          <div className="flex gap-4">
-             <span className="text-sm text-gray-500 hidden md:block">¿Necesitas ayuda? <Link to="/ayuda" className="text-[#2A9D8F] font-bold">Contáctanos</Link></span>
-             <Link to="/login" className="text-sm font-bold text-[#023047]">Login</Link>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-500 hidden md:block">¿Necesitas ayuda? <Link to="/ayuda" className="text-[#2A9D8F] font-bold">Contáctanos</Link></span>
+            {user ? (
+              <Link to="/mi-postulacion" className="text-sm font-bold text-[#2A9D8F] hover:underline">
+                Mi Postulación
+              </Link>
+            ) : (
+              <Link to="/login" className="text-sm font-bold text-[#023047]">Login</Link>
+            )}
           </div>
         </div>
       </nav>
@@ -146,6 +168,12 @@ const Catalog = () => {
               </h1>
               <span className="text-sm text-gray-500">{filteredProducts.length} resultados</span>
             </div>
+
+            {apiError && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                ⚠️ {apiError} — Verifica que el backend esté corriendo en <code>http://localhost:3001</code>
+              </div>
+            )}
 
             {filteredProducts.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
