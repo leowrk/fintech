@@ -1,5 +1,4 @@
 #!/bin/sh
-set -e
 
 echo ""
 echo "=================================================="
@@ -7,9 +6,9 @@ echo "  FINTECH Backend - Iniciando..."
 echo "=================================================="
 echo ""
 
-# Ejecutar seed de base de datos (seguro: verifica datos existentes)
+# Ejecutar seed (si falla, se loguea pero el servidor igual arranca)
 echo ">> Ejecutando seed de base de datos..."
-node dist/database/seed.js
+node dist/database/seed.js || echo "⚠️  Seed omitido (reintentará en próximo deploy)"
 echo ""
 
 # Iniciar servidor NestJS
